@@ -2,17 +2,20 @@ package com.unicorn.agent;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.memory.repository.jdbc.JdbcChatMemoryRepository;
 import org.springframework.ai.chat.memory.repository.jdbc.PostgresChatMemoryRepositoryDialect;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.document.Document;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import javax.sql.DataSource;
-
+import java.util.List;
 import reactor.core.publisher.Flux;
 
 @RestController
@@ -25,8 +28,9 @@ public class ChatController {
 		""";
 
 	private final ChatClient chatClient;
+	private final VectorStore vectorStore;
 
-	public ChatController (ChatClient.Builder chatClient, DataSource dataSource){
+	public ChatController (ChatClient.Builder chatClient, DataSource dataSource, VectorStore vectorStore){
 		var chatMemoryRepository = JdbcChatMemoryRepository.builder()
 			.dataSource(dataSource)
 			.dialect(new PostgresChatMemoryRepositoryDialect())
@@ -37,11 +41,20 @@ public class ChatController {
 			.maxMessages(20)
 			.build();
 
+		this.vectorStore = vectorStore;
+
 		this.chatClient = chatClient
 			.defaultSystem(DEFAULT_SYSTEM_PROMPT)
-			.defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
+			.defaultAdvisors(
+				MessageChatMemoryAdvisor.builder(chatMemory).build(),
+				QuestionAnswerAdvisor.builder(vectorStore).build())
 			.build();
 	}
+
+	@PostMapping("load")
+    public void loadDataToVectorStore(@RequestBody String content) {
+        vectorStore.add(List.of(new Document(content)));
+    }
 
 	@PostMapping("/chat/stream")
 	public Flux<String> chatStream(@RequestBody PromptRequest promptRequest){
